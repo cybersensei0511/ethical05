@@ -1,0 +1,20 @@
+# Common domain endings for SMTP banner parsing
+.com
+.org
+.net
+.edu
+.gov
+.mil
+.int
+.co.uk
+.co.za
+.com.au
+.de
+.fr
+.it
+.es
+.ru
+.cn
+.jp
+.br
+.in

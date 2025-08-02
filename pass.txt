@@ -1,0 +1,13 @@
+# Sample passwords for testing
+password
+123456
+password123
+admin
+%user%
+%user%123
+%User%
+%User%123
+qwerty
+letmein
+welcome
+changeme
