@@ -1,0 +1,26 @@
+# SMTP Discovery Target List
+# ========================
+# 
+# Add IP addresses or hostnames to scan (one per line)
+# Lines starting with # are comments and will be ignored
+# 
+# Examples:
+
+# Your own mail servers (replace with your actual servers)
+# mail.yourdomain.com
+# smtp.yourdomain.com  
+# mx1.yourdomain.com
+
+# Internal network ranges (replace with your actual ranges)
+# 192.168.1.100
+# 192.168.1.101
+# 192.168.1.102
+# 10.0.0.50
+# 10.0.0.51
+
+# External mail servers you have permission to test
+# mail.example.org
+# smtp.testdomain.com
+
+# Note: Only scan servers you own or have explicit permission to test
+# Unauthorized scanning may violate terms of service or laws
