@@ -1,0 +1,5 @@
+# Add usernames to test (without @domain)
+# Example (remove these lines):
+# admin
+# test
+# user

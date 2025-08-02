@@ -1,0 +1,22 @@
+# SMTP Self-Testing Tool Requirements
+# 
+# This tool uses only Python standard library modules.
+# No additional packages need to be installed.
+# 
+# Minimum Python version: 3.6+
+# 
+# Standard library modules used:
+# - socket (network connections)
+# - sys (system parameters)
+# - base64 (encoding)
+# - threading (concurrent execution)
+# - queue (thread communication)
+# - smtplib (email sending)
+# - email.mime.text (email formatting)
+# - time (timing and delays)
+# - json (data serialization)
+# - hashlib (hashing)
+# - datetime (timestamps)
+# - os (file operations)
+
+# No pip install required!
