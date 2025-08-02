@@ -1,0 +1,11 @@
+# Sample usernames for testing
+admin
+administrator
+test
+user
+mail
+postmaster
+webmaster
+info
+support
+noreply

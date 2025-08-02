@@ -1,0 +1,11 @@
+# Sample SMTP servers for testing (replace with your target IPs)
+# Gmail SMTP (for testing - note: Gmail requires OAuth2 for authentication)
+smtp.gmail.com
+# Outlook SMTP
+smtp-mail.outlook.com
+# Yahoo SMTP
+smtp.mail.yahoo.com
+# Add your target IP addresses below:
+# 192.168.1.100
+# 10.0.0.50
+# mail.example.com
