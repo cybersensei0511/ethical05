@@ -1,0 +1,4 @@
+# Add your own SMTP server IPs/hostnames here
+# Example (remove this line):
+# mail.yourdomain.com
+# 192.168.1.100
